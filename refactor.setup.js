@@ -8,13 +8,13 @@ function refactorSetupOnce() {
   refactorUpdateAssetPrices();
   refactorInitSnapshots();
   refactorUpdateSummaryFromSnapshots();
+  refactorRefreshValidationSheet();
 }
 
 // 从旧表复制静态数据到新表，之后新表就不再依赖旧表。
 function refactorMigrateSourceData() {
   var targetSs = SpreadsheetApp.getActiveSpreadsheet();
-  var sourceUrl = getConfigValue_(targetSs, 'source_url');
-  var sourceSs = SpreadsheetApp.openByUrl(sourceUrl);
+  var sourceSs = SpreadsheetApp.openById(REFACTOR_SOURCE_SPREADSHEET_ID);
 
   migrateSheetValues_({
     sourceSpreadsheet: sourceSs,
@@ -33,11 +33,12 @@ function refactorMigrateSourceData() {
   rebuildAssetDerivedColumns_(targetSs);
 }
 
-// 用迁移后的投资流水反推历史净值轨迹，生成第一版快照表。
+// 历史快照以旧表“市值记录”为准，再叠加投资流水得到净现金流合计。
 function refactorInitSnapshots() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var snapshotSheet = ss.getSheetByName(REFACTOR_SHEET_NAMES.snapshots);
   if (!snapshotSheet) throw new Error('找不到工作表: ' + REFACTOR_SHEET_NAMES.snapshots);
+  ensureSnapshotSheetLayout_(snapshotSheet);
 
   var existingLastRow = snapshotSheet.getLastRow();
   if (existingLastRow > 1) {
@@ -45,8 +46,8 @@ function refactorInitSnapshots() {
   }
 
   var dailyFlowMap = buildDailyInvestmentFlowMap_(ss);
-  var flowDates = Object.keys(dailyFlowMap).sort();
-  if (!flowDates.length) {
+  var marketRows = getHistoricalMarketValueRows_();
+  if (!marketRows.length) {
     refactorUpdateSummary_({
       latestDate: '',
       totalAssets: 0,
@@ -61,27 +62,24 @@ function refactorInitSnapshots() {
   }
 
   var rows = [];
-  var baseNetAssets = getCurrentNetAssets_(ss);
   var cumulativeFlow = 0;
 
-  for (var i = 0; i < flowDates.length; i++) {
-    var day = flowDates[i];
-    cumulativeFlow += dailyFlowMap[day];
+  for (var i = 0; i < marketRows.length; i++) {
+    var day = formatDateKey_(marketRows[i].date);
+    var dayFlow = dailyFlowMap[day] || 0;
+    cumulativeFlow += dayFlow;
     rows.push([
-      parseDateKey_(day),
+      marketRows[i].date,
+      marketRows[i].totalAssets,
       '',
       '',
-      baseNetAssets - cumulativeFlow,
-      dailyFlowMap[day],
+      dayFlow,
       '',
       '',
-      ''
+      '',
+      cumulativeFlow
     ]);
   }
-
-  rows[rows.length - 1][1] = getCurrentTotalAssets_(ss);
-  rows[rows.length - 1][2] = getCurrentTotalLiabilities_(ss);
-  rows[rows.length - 1][3] = getCurrentNetAssets_(ss);
 
   finalizeSnapshotRows_(rows);
   snapshotSheet.getRange(2, 1, rows.length, rows[0].length).setValues(rows);

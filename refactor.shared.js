@@ -4,11 +4,13 @@ var REFACTOR_SHEET_NAMES = {
   overview: '概览',
   balance: '总资产负债',
   snapshots: '净值快照',
-  config: '脚本配置'
+  config: '脚本配置',
+  validation: '重算校验'
 };
 
 var REFACTOR_COLUMNS = {
   assets: {
+    name: 1,
     code: 3,
     amount: 10
   },
@@ -23,13 +25,17 @@ var REFACTOR_COLUMNS = {
     totalLiabilities: 3,
     netAssets: 4,
     netFlow: 5,
-    pnl: 6,
+    dailyReturn: 6,
     nav: 7,
-    drawdown: 8
+    drawdown: 8,
+    cumulativeNetFlow: 9
   }
 };
 
 var REFACTOR_PRICE_SOURCES = ['sh', 'sz', 'bj', 'hk', 'of'];
+var REFACTOR_SNAPSHOT_START_DATE = new Date(2019, 0, 1);
+var REFACTOR_SOURCE_SPREADSHEET_ID = '1m8l-5XBg5wUcR1fFaRFU2fKYqVHTCsjcDBWIFPznOm4';
+var REFACTOR_SOURCE_MARKET_VALUE_SHEET = '市值记录';
 
 function getCurrentTotalAssets_(ss) {
   return sumAmounts_(ss, function(amount) { return amount > 0; });
@@ -40,16 +46,33 @@ function getCurrentTotalLiabilities_(ss) {
 }
 
 function getCurrentNetAssets_(ss) {
-  return getCurrentTotalAssets_(ss) - getCurrentTotalLiabilities_(ss);
+  return getCurrentTotalAssets_(ss);
+}
+
+function ensureSnapshotSheetLayout_(sheet) {
+  var headers = [[
+    '日期',
+    '总资产',
+    '',
+    '',
+    '当日净现金流',
+    '日收益',
+    '净值',
+    '回撤',
+    '净现金流合计'
+  ]];
+  sheet.getRange(1, 1, 1, headers[0].length).setValues(headers);
 }
 
 function sumAmounts_(ss, predicate) {
   var assetSheet = ss.getSheetByName(REFACTOR_SHEET_NAMES.assets);
   if (!assetSheet || assetSheet.getLastRow() <= 1) return 0;
 
-  var values = assetSheet.getRange(2, REFACTOR_COLUMNS.assets.amount, assetSheet.getLastRow() - 1, 1).getValues();
+  var values = assetSheet.getRange(2, 1, assetSheet.getLastRow() - 1, REFACTOR_COLUMNS.assets.amount).getValues();
   return values.reduce(function(sum, row) {
-    var amount = toNumber_(row[0]);
+    var name = row[REFACTOR_COLUMNS.assets.name - 1];
+    var amount = toNumber_(row[REFACTOR_COLUMNS.assets.amount - 1]);
+    if (!isRealAssetRow_(name, amount)) return sum;
     if (!isFinite(amount) || !predicate(amount)) return sum;
     return sum + amount;
   }, 0);
@@ -67,9 +90,11 @@ function buildDailyInvestmentFlowMap_(ss) {
     var type = row[REFACTOR_COLUMNS.flows.type - 1];
     var dateValue = row[REFACTOR_COLUMNS.flows.date - 1];
     var amount = toNumber_(row[REFACTOR_COLUMNS.flows.cashflow - 1]);
+    var normalizedDate = normalizeDate_(dateValue);
 
-    if (type !== '投资' || !dateValue || !isFinite(amount)) return;
-    var key = formatDateKey_(normalizeDate_(dateValue));
+    if (type !== '投资' || !normalizedDate || !isFinite(amount)) return;
+    if (normalizedDate < REFACTOR_SNAPSHOT_START_DATE) return;
+    var key = formatDateKey_(normalizedDate);
     map[key] = (map[key] || 0) + amount;
   });
 
@@ -222,25 +247,39 @@ function rebuildAssetDerivedColumns_(ss) {
   }
 }
 
+function isRealAssetRow_(name, amount) {
+  if (!name) return false;
+  if (!isFinite(amount)) return false;
+  var text = String(name).trim();
+  if (!text) return false;
+  if (text === '`') return false;
+  return true;
+}
+
 function finalizeSnapshotRows_(rows) {
   if (!rows.length) return;
 
-  var firstNetAssets = toNumber_(rows[0][3]) || 1;
   var runningPeak = 1;
 
   for (var i = 0; i < rows.length; i++) {
-    var currentNetAssets = toNumber_(rows[i][3]) || 0;
-    var currentFlow = toNumber_(rows[i][4]) || 0;
-    var previousNetAssets = i > 0 ? (toNumber_(rows[i - 1][3]) || 0) : currentNetAssets - currentFlow;
-
-    var pnl = i === 0 ? 0 : currentNetAssets - previousNetAssets - currentFlow;
-    var nav = firstNetAssets ? currentNetAssets / firstNetAssets : 1;
+    var currentTotalAssets = toNumber_(rows[i][1]) || 0;
+    var dayFlow = toNumber_(rows[i][4]) || 0;
+    var cumulativeNetFlow = toNumber_(rows[i][8]) || toNumber_(rows[i][3]) || 0;
+    var previousTotalAssets = i > 0 ? (toNumber_(rows[i - 1][1]) || 0) : currentTotalAssets - dayFlow;
+    var dailyReturn = i === 0 ? 0 : currentTotalAssets - previousTotalAssets - dayFlow;
+    var dailyReturnRate = i === 0 || !previousTotalAssets ? 0 : dailyReturn / previousTotalAssets;
+    var nav = i === 0
+      ? 1
+      : (toNumber_(rows[i - 1][6]) || 1) * (1 + dailyReturnRate);
     runningPeak = Math.max(runningPeak, nav || 0);
     var drawdown = runningPeak ? (nav / runningPeak) - 1 : 0;
 
-    rows[i][5] = pnl;
+    rows[i][2] = '';
+    rows[i][3] = '';
+    rows[i][5] = dailyReturn;
     rows[i][6] = nav;
     rows[i][7] = drawdown;
+    rows[i][8] = cumulativeNetFlow;
   }
 }
 
@@ -260,7 +299,7 @@ function calculatePortfolioXirr_(ss, snapshotRows) {
   });
 
   var lastRow = snapshotRows[snapshotRows.length - 1];
-  values.push(toNumber_(lastRow[3]) || 0);
+  values.push(toNumber_(lastRow[1]) || 0);
   dates.push(normalizeDate_(lastRow[0]));
 
   var result = XIRR(values, dates, 0.1);
@@ -306,7 +345,7 @@ function refactorUpdateSummary_(summary) {
   var rows = [
     ['latest_snapshot_date', summary.latestDate || '', 'GAS 更新'],
     ['latest_total_assets', summary.totalAssets || 0, 'GAS 更新'],
-    ['latest_net_assets', summary.netAssets || 0, 'GAS 更新'],
+    ['latest_net_assets', summary.netAssets === '' ? '' : (summary.netAssets || 0), 'GAS 更新'],
     ['latest_daily_return', summary.dailyReturn || 0, 'GAS 更新'],
     ['xirr_all', summary.xirr === '' ? '' : summary.xirr, 'GAS 更新'],
     ['max_drawdown', summary.maxDrawdown || 0, 'GAS 更新'],
@@ -315,6 +354,84 @@ function refactorUpdateSummary_(summary) {
   ];
 
   sheet.getRange(2, 1, rows.length, rows[0].length).setValues(rows);
+}
+
+function refactorRefreshValidationSheet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(REFACTOR_SHEET_NAMES.validation);
+  if (!sheet) {
+    sheet = ss.insertSheet(REFACTOR_SHEET_NAMES.validation);
+  } else {
+    sheet.clearContents();
+  }
+
+  var snapshotSheet = ss.getSheetByName(REFACTOR_SHEET_NAMES.snapshots);
+  if (!snapshotSheet || snapshotSheet.getLastRow() <= 1) return;
+
+  var newRows = snapshotSheet
+    .getRange(2, 1, snapshotSheet.getLastRow() - 1, REFACTOR_COLUMNS.snapshots.cumulativeNetFlow)
+    .getValues()
+    .filter(function(row) { return row[0]; });
+
+  var historicalRows = getHistoricalMarketValueRows_();
+  var historicalMap = {};
+  historicalRows.forEach(function(row) {
+    historicalMap[formatDateKey_(row.date)] = row.totalAssets;
+  });
+
+  var output = [[
+    '日期',
+    '旧表总资产',
+    '新表总资产',
+    '总资产差额',
+    '净现金流合计',
+    '当日净现金流',
+    '新表日收益',
+    '新表净值',
+    '新表回撤'
+  ]];
+
+  newRows.forEach(function(row) {
+    var dateKey = formatDateKey_(normalizeDate_(row[0]));
+    var oldTotalAssets = historicalMap[dateKey];
+    var newTotalAssets = toNumber_(row[1]);
+    output.push([
+      row[0],
+      oldTotalAssets,
+      newTotalAssets,
+      isFinite(oldTotalAssets) && isFinite(newTotalAssets) ? newTotalAssets - oldTotalAssets : '',
+      row[8],
+      row[4],
+      row[5],
+      row[6],
+      row[7]
+    ]);
+  });
+
+  sheet.getRange(1, 1, output.length, output[0].length).setValues(output);
+}
+
+function getHistoricalMarketValueRows_() {
+  var sourceSs = SpreadsheetApp.openById(REFACTOR_SOURCE_SPREADSHEET_ID);
+  var sheet = sourceSs.getSheetByName(REFACTOR_SOURCE_MARKET_VALUE_SHEET);
+  if (!sheet || sheet.getLastRow() <= 2) return [];
+
+  var values = sheet.getRange(3, 1, sheet.getLastRow() - 2, 2).getValues();
+  return values
+    .map(function(row) {
+      var date = normalizeDate_(row[0]);
+      var totalAssets = toNumber_(row[1]);
+      return {
+        date: date,
+        totalAssets: isFinite(totalAssets) ? totalAssets : totalAssets
+      };
+    })
+    .filter(function(row) {
+      return row.date && isFinite(row.totalAssets) && row.date >= REFACTOR_SNAPSHOT_START_DATE;
+    })
+    .sort(function(a, b) {
+      return a.date.getTime() - b.date.getTime();
+    });
 }
 
 function getConfigValue_(ss, key) {
