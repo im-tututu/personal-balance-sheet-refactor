@@ -18,30 +18,29 @@ function refactorDailyUpdate() {
   ensureSnapshotSheetLayout_(snapshotSheet);
 
   var today = normalizeDate_(new Date());
-  var todayKey = formatDateKey_(today);
   var data = snapshotSheet.getLastRow() > 1
-    ? snapshotSheet.getRange(2, 1, snapshotSheet.getLastRow() - 1, REFACTOR_COLUMNS.snapshots.cumulativeNetFlow).getValues()
+    ? snapshotSheet.getRange(
+        2,
+        1,
+        snapshotSheet.getLastRow() - 1,
+        REFACTOR_COLUMNS.snapshots.shares
+      ).getValues()
     : [];
 
   var dailyFlowMap = buildDailyInvestmentFlowMap_(ss);
-  var todayFlow = dailyFlowMap[todayKey] || 0;
+  var openingCumulativeNetFlow = getSnapshotOpeningCumulativeFlow_(ss);
   var totalAssets = getCurrentTotalAssets_(ss);
-  var previousCumulativeFlow = data.length
-    ? (toNumber_(data[data.length - 1][REFACTOR_COLUMNS.snapshots.cumulativeNetFlow - 1]) || 0)
-    : 0;
-  var cumulativeNetFlow = previousCumulativeFlow + todayFlow;
+  var todayCumulativeNetFlow = getCumulativeInvestmentFlowAsOf_(dailyFlowMap, today);
 
   if (data.length) {
     var lastRow = data[data.length - 1];
     var lastDate = normalizeDate_(lastRow[0]);
-    if (lastDate && formatDateKey_(lastDate) === todayKey) {
+
+    if (lastDate && formatDateKey_(lastDate) === formatDateKey_(today)) {
       lastRow[1] = totalAssets;
-      lastRow[2] = '';
-      lastRow[3] = '';
-      lastRow[4] = todayFlow;
-      lastRow[8] = cumulativeNetFlow;
-      finalizeSnapshotRows_(data);
-      snapshotSheet.getRange(2, 1, data.length, REFACTOR_COLUMNS.snapshots.cumulativeNetFlow).setValues(data);
+      lastRow[8] = todayCumulativeNetFlow;
+      finalizeSnapshotRows_(data, openingCumulativeNetFlow);
+      snapshotSheet.getRange(2, 1, data.length, REFACTOR_COLUMNS.snapshots.shares).setValues(data);
       refactorUpdateSummaryFromSnapshots();
       return;
     }
@@ -52,16 +51,19 @@ function refactorDailyUpdate() {
     totalAssets,
     '',
     '',
-    todayFlow,
     '',
     '',
     '',
-    cumulativeNetFlow
+    '',
+    todayCumulativeNetFlow,
+    ''
   ]);
-  finalizeSnapshotRows_(data);
-  snapshotSheet.getRange(2, 1, data.length, REFACTOR_COLUMNS.snapshots.cumulativeNetFlow).setValues(data);
+
+  finalizeSnapshotRows_(data, openingCumulativeNetFlow);
+  snapshotSheet.getRange(2, 1, data.length, REFACTOR_COLUMNS.snapshots.shares).setValues(data);
   refactorUpdateSummaryFromSnapshots();
 }
+
 
 // 摘要区只读快照表结果，不再自己重复算一套净值轨迹。
 function refactorUpdateSummaryFromSnapshots() {
@@ -69,7 +71,7 @@ function refactorUpdateSummaryFromSnapshots() {
   var snapshotSheet = ss.getSheetByName(REFACTOR_SHEET_NAMES.snapshots);
   if (!snapshotSheet || snapshotSheet.getLastRow() <= 1) return;
 
-  var rows = snapshotSheet.getRange(2, 1, snapshotSheet.getLastRow() - 1, REFACTOR_COLUMNS.snapshots.cumulativeNetFlow).getValues()
+  var rows = snapshotSheet.getRange(2, 1, snapshotSheet.getLastRow() - 1, REFACTOR_COLUMNS.snapshots.shares).getValues()
     .filter(function(row) { return row[0]; })
     .sort(function(a, b) {
       return normalizeDate_(a[0]).getTime() - normalizeDate_(b[0]).getTime();

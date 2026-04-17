@@ -28,17 +28,17 @@ var REFACTOR_COLUMNS = {
     dailyReturn: 6,
     nav: 7,
     drawdown: 8,
-    cumulativeNetFlow: 9
+    cumulativeNetFlow: 9,
+    shares: 10
   }
 };
-
 var REFACTOR_PRICE_SOURCES = ['sh', 'sz', 'bj', 'hk', 'of'];
 var REFACTOR_SNAPSHOT_START_DATE = new Date(2019, 0, 1);
 var REFACTOR_SOURCE_SPREADSHEET_ID = '1m8l-5XBg5wUcR1fFaRFU2fKYqVHTCsjcDBWIFPznOm4';
 var REFACTOR_SOURCE_MARKET_VALUE_SHEET = '市值记录';
 
-function getCurrentTotalAssets_(ss) {
-  return sumAmounts_(ss, function(amount) { return amount > 0; });
+function getCurrentNetAssets_(ss) {
+  return getCurrentTotalAssets_(ss) - getCurrentTotalLiabilities_(ss);
 }
 
 function getCurrentTotalLiabilities_(ss) {
@@ -59,7 +59,8 @@ function ensureSnapshotSheetLayout_(sheet) {
     '日收益',
     '净值',
     '回撤',
-    '净现金流合计'
+    '净现金流合计',
+    '份额'
   ]];
   sheet.getRange(1, 1, 1, headers[0].length).setValues(headers);
 }
@@ -78,27 +79,71 @@ function sumAmounts_(ss, predicate) {
   }, 0);
 }
 
-// 投资流水是净值、XIRR 和快照的共同基础，统一在这里按天归集。
 function buildDailyInvestmentFlowMap_(ss) {
   var flowSheet = ss.getSheetByName(REFACTOR_SHEET_NAMES.flows);
   if (!flowSheet || flowSheet.getLastRow() <= 1) return {};
 
-  var values = flowSheet.getRange(2, 1, flowSheet.getLastRow() - 1, REFACTOR_COLUMNS.flows.cashflow).getValues();
+  var values = flowSheet.getRange(
+    2,
+    1,
+    flowSheet.getLastRow() - 1,
+    REFACTOR_COLUMNS.flows.cashflow
+  ).getValues();
+
   var map = {};
 
   values.forEach(function(row) {
-    var type = row[REFACTOR_COLUMNS.flows.type - 1];
+    var rawType = row[REFACTOR_COLUMNS.flows.type - 1];
+    var type = String(rawType == null ? '' : rawType).replace(/\s+/g, '');
     var dateValue = row[REFACTOR_COLUMNS.flows.date - 1];
     var amount = toNumber_(row[REFACTOR_COLUMNS.flows.cashflow - 1]);
     var normalizedDate = normalizeDate_(dateValue);
 
-    if (type !== '投资' || !normalizedDate || !isFinite(amount)) return;
-    if (normalizedDate < REFACTOR_SNAPSHOT_START_DATE) return;
+    if (type !== '投资') return;
+    if (!normalizedDate || !isFinite(amount)) return;
+
     var key = formatDateKey_(normalizedDate);
-    map[key] = (map[key] || 0) + amount;
+
+    // 关键：从“账户现金视角”翻成“组合资金流入视角”
+    map[key] = (map[key] || 0) - amount;
   });
 
   return map;
+}
+
+function getCumulativeInvestmentFlowAsOf_(dailyMap, date) {
+  var targetKey = formatDateKey_(date);
+  var keys = Object.keys(dailyMap).sort();
+  var sum = 0;
+
+  for (var i = 0; i < keys.length; i++) {
+    if (keys[i] <= targetKey) {
+      sum += dailyMap[keys[i]];
+    }
+  }
+  return sum;
+}
+
+function getSnapshotOpeningCumulativeFlow_(ss) {
+  var dailyMap = buildDailyInvestmentFlowMap_(ss);
+  var dayBeforeStart = new Date(REFACTOR_SNAPSHOT_START_DATE);
+  dayBeforeStart.setDate(dayBeforeStart.getDate() - 1);
+  return getCumulativeInvestmentFlowAsOf_(dailyMap, dayBeforeStart);
+}
+
+
+function buildCumulativeInvestmentFlowMap_(ss) {
+  var dailyMap = buildDailyInvestmentFlowMap_(ss);
+  var keys = Object.keys(dailyMap).sort();
+  var cumulativeMap = {};
+  var running = 0;
+
+  keys.forEach(function(key) {
+    running += dailyMap[key];
+    cumulativeMap[key] = running;
+  });
+
+  return cumulativeMap;
 }
 
 function refactorUpdateAssetPrices() {
@@ -256,30 +301,60 @@ function isRealAssetRow_(name, amount) {
   return true;
 }
 
-function finalizeSnapshotRows_(rows) {
+function finalizeSnapshotRows_(rows, openingCumulativeNetFlow) {
   if (!rows.length) return;
 
+  rows.sort(function(a, b) {
+    return normalizeDate_(a[0]).getTime() - normalizeDate_(b[0]).getTime();
+  });
+
   var runningPeak = 1;
+  var openingFlow = isFinite(toNumber_(openingCumulativeNetFlow))
+    ? toNumber_(openingCumulativeNetFlow)
+    : 0;
 
   for (var i = 0; i < rows.length; i++) {
     var currentTotalAssets = toNumber_(rows[i][1]) || 0;
-    var dayFlow = toNumber_(rows[i][4]) || 0;
-    var cumulativeNetFlow = toNumber_(rows[i][8]) || toNumber_(rows[i][3]) || 0;
-    var previousTotalAssets = i > 0 ? (toNumber_(rows[i - 1][1]) || 0) : currentTotalAssets - dayFlow;
-    var dailyReturn = i === 0 ? 0 : currentTotalAssets - previousTotalAssets - dayFlow;
-    var dailyReturnRate = i === 0 || !previousTotalAssets ? 0 : dailyReturn / previousTotalAssets;
-    var nav = i === 0
-      ? 1
-      : (toNumber_(rows[i - 1][6]) || 1) * (1 + dailyReturnRate);
+
+    var cumulativeNetFlow = toNumber_(rows[i][8]);
+    if (!isFinite(cumulativeNetFlow)) cumulativeNetFlow = 0;
+
+    var previousCumulativeNetFlow = i > 0
+      ? (toNumber_(rows[i - 1][8]) || 0)
+      : openingFlow;
+
+    var dayFlow = cumulativeNetFlow - previousCumulativeNetFlow;
+
+    var previousTotalAssets = i > 0 ? (toNumber_(rows[i - 1][1]) || 0) : currentTotalAssets;
+    var dailyReturn = i === 0 ? 0 : (currentTotalAssets - previousTotalAssets - dayFlow);
+
+    var prevNav = i > 0 ? (toNumber_(rows[i - 1][6]) || 1) : 1;
+    if (!isFinite(prevNav) || prevNav <= 0) prevNav = 1;
+
+    var prevShares = i > 0 ? (toNumber_(rows[i - 1][9]) || 0) : 0;
+
+    var shares;
+    var nav;
+
+    if (i === 0) {
+      nav = 1;
+      shares = currentTotalAssets / nav;
+    } else {
+      shares = prevShares + dayFlow / prevNav;
+      nav = shares ? (currentTotalAssets / shares) : 0;
+    }
+
     runningPeak = Math.max(runningPeak, nav || 0);
     var drawdown = runningPeak ? (nav / runningPeak) - 1 : 0;
 
     rows[i][2] = '';
     rows[i][3] = '';
+    rows[i][4] = dayFlow;
     rows[i][5] = dailyReturn;
     rows[i][6] = nav;
     rows[i][7] = drawdown;
     rows[i][8] = cumulativeNetFlow;
+    rows[i][9] = shares;
   }
 }
 
@@ -388,7 +463,8 @@ function refactorRefreshValidationSheet() {
     '当日净现金流',
     '新表日收益',
     '新表净值',
-    '新表回撤'
+    '新表回撤',
+    '新表份额'
   ]];
 
   newRows.forEach(function(row) {
@@ -404,7 +480,8 @@ function refactorRefreshValidationSheet() {
       row[4],
       row[5],
       row[6],
-      row[7]
+      row[7],
+      row[9]
     ]);
   });
 
