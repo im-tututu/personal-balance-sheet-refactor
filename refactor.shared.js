@@ -608,3 +608,10 @@ function toNumber_(value) {
   var cleaned = String(value).replace(/[,\s￥]/g, '');
   return Number(cleaned);
 }
+
+
+function getCurrentTotalAssets_(ss) {
+
+  return sumAmounts_(ss, function(amount) { return amount > 0; });
+
+}

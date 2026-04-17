@@ -97,9 +97,51 @@ function migrateSheetValues_(options) {
   var lastColumn = sourceSheet.getLastColumn();
   if (!lastRow || !lastColumn) return;
 
-  var values = sourceSheet.getRange(1, 1, lastRow, Math.min(lastColumn, 17)).getValues();
-  targetSheet.clearContents();
-  targetSheet.getRange(1, 1, values.length, values[0].length).setValues(values);
+  if (targetSheet.getMaxColumns() < lastColumn) {
+    targetSheet.insertColumnsAfter(targetSheet.getMaxColumns(), lastColumn - targetSheet.getMaxColumns());
+  }
+  if (targetSheet.getMaxRows() < lastRow) {
+    targetSheet.insertRowsAfter(targetSheet.getMaxRows(), lastRow - targetSheet.getMaxRows());
+  }
+
+  var targetWholeRange = targetSheet.getRange(1, 1, targetSheet.getMaxRows(), targetSheet.getMaxColumns());
+  targetWholeRange.clearContent();
+  targetWholeRange.clearFormat();
+  targetWholeRange.clearDataValidations();
+  targetWholeRange.clearNote();
+
+  var sourceRange = sourceSheet.getRange(1, 1, lastRow, lastColumn);
+  var targetRange = targetSheet.getRange(1, 1, lastRow, lastColumn);
+
+  var values = sourceRange.getValues();
+  var formulas = sourceRange.getFormulas();
+  var numberFormats = sourceRange.getNumberFormats();
+  var backgrounds = sourceRange.getBackgrounds();
+  var fontColors = sourceRange.getFontColors();
+  var fontWeights = sourceRange.getFontWeights();
+  var horizontalAlignments = sourceRange.getHorizontalAlignments();
+  var verticalAlignments = sourceRange.getVerticalAlignments();
+  var wraps = sourceRange.getWraps();
+  var notes = sourceRange.getNotes();
+
+  var mixed = [];
+  for (var r = 0; r < lastRow; r++) {
+    var row = [];
+    for (var c = 0; c < lastColumn; c++) {
+      row.push(formulas[r][c] ? formulas[r][c] : values[r][c]);
+    }
+    mixed.push(row);
+  }
+
+  targetRange.setValues(mixed);
+  targetRange.setNumberFormats(numberFormats);
+  targetRange.setBackgrounds(backgrounds);
+  targetRange.setFontColors(fontColors);
+  targetRange.setFontWeights(fontWeights);
+  targetRange.setHorizontalAlignments(horizontalAlignments);
+  targetRange.setVerticalAlignments(verticalAlignments);
+  targetRange.setWraps(wraps);
+  targetRange.setNotes(notes);
 }
 
 // 兼容旧入口，避免已经配好的手动脚本名失效。
