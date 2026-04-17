@@ -19,7 +19,7 @@ function getRefactorFormatConfigs_() {
       amountColumns: [REFACTOR_COLUMNS.flows.cashflow]
     },
     snapshots: {
-      fixedColumnCount: 8,
+      fixedColumnCount: 7,
       dateColumn: REFACTOR_COLUMNS.snapshots.date,
       amountColumns: [
         REFACTOR_COLUMNS.snapshots.totalAssets,
@@ -29,7 +29,6 @@ function getRefactorFormatConfigs_() {
       ],
       integerColumns: [REFACTOR_COLUMNS.snapshots.shares],
       rateColumns: [REFACTOR_COLUMNS.snapshots.nav],
-      percentColumns: [REFACTOR_COLUMNS.snapshots.drawdown],
       signedBackgroundAmountColumns: [
         REFACTOR_COLUMNS.snapshots.netFlow,
         REFACTOR_COLUMNS.snapshots.dailyReturn
@@ -40,9 +39,8 @@ function getRefactorFormatConfigs_() {
         3: 98,
         4: 88,
         5: 72,
-        6: 72,
-        7: 98,
-        8: 86
+        6: 98,
+        7: 86
       }
     },
     marketValueHistory: {
@@ -68,9 +66,8 @@ function getRefactorFormatConfigs_() {
     },
     validation: {
       dateColumn: 1,
-      amountColumns: [2, 3, 4, 5, 6, 7, 10],
+      amountColumns: [2, 3, 4, 5, 6, 7, 9],
       rateColumns: [8],
-      percentColumns: [9],
       colorAmountColumns: [4, 6, 7],
       compactColumns: {
         1: 88,
@@ -81,8 +78,7 @@ function getRefactorFormatConfigs_() {
         6: 88,
         7: 88,
         8: 72,
-        9: 72,
-        10: 88
+        9: 88
       }
     },
     assetSnapshots: {

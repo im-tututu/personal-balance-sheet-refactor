@@ -63,8 +63,9 @@ function refactorInitSnapshots() {
   var dailyFlowMap = buildDailyInvestmentFlowMap_(ss);
   var openingCumulativeNetFlow = getSnapshotOpeningCumulativeFlow_(ss);
   var marketRows = getHistoricalMarketValueRows_();
+  var rows = buildSnapshotSeedRows_(marketRows, dailyFlowMap);
 
-  if (!marketRows.length) {
+  if (!rows.length) {
     refactorUpdateSummary_({
       latestDate: '',
       totalAssets: 0,
@@ -76,23 +77,6 @@ function refactorInitSnapshots() {
       drawdownTo: ''
     });
     return;
-  }
-
-  var rows = [];
-
-  for (var i = 0; i < marketRows.length; i++) {
-    var cumulativeNetFlow = getCumulativeInvestmentFlowAsOf_(dailyFlowMap, marketRows[i].date);
-
-    rows.push([
-      marketRows[i].date,
-      marketRows[i].totalAssets,
-      '',
-      '',
-      '',
-      '',
-      cumulativeNetFlow,
-      ''
-    ]);
   }
 
   finalizeSnapshotRows_(rows, openingCumulativeNetFlow);

@@ -57,7 +57,7 @@ function refactorDailyUpdate() {
 
   if (existingTodayIndex > -1) {
     data[existingTodayIndex][1] = totalAssets;
-    data[existingTodayIndex][6] = todayCumulativeNetFlow;
+    data[existingTodayIndex][5] = todayCumulativeNetFlow;
     finalizeSnapshotRows_(data, openingCumulativeNetFlow);
     snapshotSheet.getRange(2, 1, data.length, REFACTOR_COLUMNS.snapshots.shares).setValues(data);
     refactorUpdateSummaryFromSnapshots();
@@ -67,7 +67,6 @@ function refactorDailyUpdate() {
   data.push([
     today,
     totalAssets,
-    '',
     '',
     '',
     '',

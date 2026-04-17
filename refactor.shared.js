@@ -27,9 +27,8 @@ var REFACTOR_COLUMNS = {
     netFlow: 3,
     dailyReturn: 4,
     nav: 5,
-    drawdown: 6,
-    cumulativeNetFlow: 7,
-    shares: 8
+    cumulativeNetFlow: 6,
+    shares: 7
   }
 };
 var REFACTOR_PRICE_SOURCES = ['sh', 'sz', 'bj', 'hk', 'of'];
@@ -78,7 +77,6 @@ function ensureSnapshotSheetLayout_(sheet) {
     '当日净现金流',
     '日收益',
     '净值',
-    '回撤',
     '净现金流合计',
     '份额'
   ]];
@@ -181,6 +179,50 @@ function buildCumulativeInvestmentFlowMap_(ss) {
   });
 
   return cumulativeMap;
+}
+
+function buildSnapshotSeedRows_(marketRows, dailyFlowMap) {
+  if (!marketRows.length) return [];
+
+  var marketMap = {};
+  var dateKeySet = {};
+
+  marketRows.forEach(function(row) {
+    var dateKey = formatDateKey_(row.date);
+    marketMap[dateKey] = row.totalAssets;
+    dateKeySet[dateKey] = true;
+  });
+
+  Object.keys(dailyFlowMap).forEach(function(dateKey) {
+    if (dateKey >= formatDateKey_(REFACTOR_SNAPSHOT_START_DATE)) {
+      dateKeySet[dateKey] = true;
+    }
+  });
+
+  // 日期轴取“市值记录日期 + 投资流水日期”的并集；
+  // 没有市值记录的日期沿用上一条已知总资产，只补齐现金流时间点。
+  var sortedDateKeys = Object.keys(dateKeySet).sort();
+  var rows = [];
+  var lastKnownTotalAssets = null;
+
+  sortedDateKeys.forEach(function(dateKey) {
+    if (marketMap.hasOwnProperty(dateKey)) {
+      lastKnownTotalAssets = marketMap[dateKey];
+    }
+    if (!isFinite(toNumber_(lastKnownTotalAssets))) return;
+
+    rows.push([
+      parseDateKey_(dateKey),
+      lastKnownTotalAssets,
+      '',
+      '',
+      '',
+      getCumulativeInvestmentFlowAsOf_(dailyFlowMap, parseDateKey_(dateKey)),
+      ''
+    ]);
+  });
+
+  return rows;
 }
 
 function refactorUpdateAssetPrices() {
@@ -345,7 +387,6 @@ function finalizeSnapshotRows_(rows, openingCumulativeNetFlow) {
     return normalizeDate_(a[0]).getTime() - normalizeDate_(b[0]).getTime();
   });
 
-  var runningPeak = 1;
   var openingFlow = isFinite(toNumber_(openingCumulativeNetFlow))
     ? toNumber_(openingCumulativeNetFlow)
     : 0;
@@ -353,11 +394,11 @@ function finalizeSnapshotRows_(rows, openingCumulativeNetFlow) {
   for (var i = 0; i < rows.length; i++) {
     var currentTotalAssets = toNumber_(rows[i][1]) || 0;
 
-    var cumulativeNetFlow = toNumber_(rows[i][6]);
+    var cumulativeNetFlow = toNumber_(rows[i][5]);
     if (!isFinite(cumulativeNetFlow)) cumulativeNetFlow = 0;
 
     var previousCumulativeNetFlow = i > 0
-      ? (toNumber_(rows[i - 1][6]) || 0)
+      ? (toNumber_(rows[i - 1][5]) || 0)
       : openingFlow;
 
     var dayFlow = cumulativeNetFlow - previousCumulativeNetFlow;
@@ -368,7 +409,7 @@ function finalizeSnapshotRows_(rows, openingCumulativeNetFlow) {
     var prevNav = i > 0 ? (toNumber_(rows[i - 1][4]) || 1) : 1;
     if (!isFinite(prevNav) || prevNav <= 0) prevNav = 1;
 
-    var prevShares = i > 0 ? (toNumber_(rows[i - 1][7]) || 0) : 0;
+    var prevShares = i > 0 ? (toNumber_(rows[i - 1][6]) || 0) : 0;
 
     var shares;
     var nav;
@@ -381,15 +422,11 @@ function finalizeSnapshotRows_(rows, openingCumulativeNetFlow) {
       nav = shares ? (currentTotalAssets / shares) : 0;
     }
 
-    runningPeak = Math.max(runningPeak, nav || 0);
-    var drawdown = runningPeak ? (nav / runningPeak) - 1 : 0;
-
     rows[i][2] = dayFlow;
     rows[i][3] = dailyReturn;
     rows[i][4] = nav;
-    rows[i][5] = drawdown;
-    rows[i][6] = cumulativeNetFlow;
-    rows[i][7] = shares;
+    rows[i][5] = cumulativeNetFlow;
+    rows[i][6] = shares;
   }
 }
 
@@ -498,7 +535,6 @@ function refactorRefreshValidationSheet() {
     '当日净现金流',
     '新表日收益',
     '新表净值',
-    '新表回撤',
     '新表份额'
   ]];
 
@@ -511,12 +547,11 @@ function refactorRefreshValidationSheet() {
       oldTotalAssets,
       newTotalAssets,
       isFinite(oldTotalAssets) && isFinite(newTotalAssets) ? newTotalAssets - oldTotalAssets : '',
-      row[6],
+      row[5],
       row[2],
       row[3],
       row[4],
-      row[5],
-      row[7]
+      row[6]
     ]);
   });
 
