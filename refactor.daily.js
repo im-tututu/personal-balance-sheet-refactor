@@ -44,26 +44,29 @@ function refactorDailyUpdate() {
   var openingCumulativeNetFlow = getSnapshotOpeningCumulativeFlow_(ss);
   var totalAssets = getCurrentTotalAssets_(ss);
   var todayCumulativeNetFlow = getCumulativeInvestmentFlowAsOf_(dailyFlowMap, today);
+  var todayKey = formatDateKey_(today);
+  var existingTodayIndex = -1;
 
-  if (data.length) {
-    var lastRow = data[data.length - 1];
-    var lastDate = normalizeDate_(lastRow[0]);
-
-    if (lastDate && formatDateKey_(lastDate) === formatDateKey_(today)) {
-      lastRow[1] = totalAssets;
-      lastRow[8] = todayCumulativeNetFlow;
-      finalizeSnapshotRows_(data, openingCumulativeNetFlow);
-      snapshotSheet.getRange(2, 1, data.length, REFACTOR_COLUMNS.snapshots.shares).setValues(data);
-      refactorUpdateSummaryFromSnapshots();
-      return;
+  for (var i = 0; i < data.length; i++) {
+    var rowDate = normalizeDate_(data[i][0]);
+    if (rowDate && formatDateKey_(rowDate) === todayKey) {
+      existingTodayIndex = i;
+      break;
     }
+  }
+
+  if (existingTodayIndex > -1) {
+    data[existingTodayIndex][1] = totalAssets;
+    data[existingTodayIndex][6] = todayCumulativeNetFlow;
+    finalizeSnapshotRows_(data, openingCumulativeNetFlow);
+    snapshotSheet.getRange(2, 1, data.length, REFACTOR_COLUMNS.snapshots.shares).setValues(data);
+    refactorUpdateSummaryFromSnapshots();
+    return;
   }
 
   data.push([
     today,
     totalAssets,
-    '',
-    '',
     '',
     '',
     '',
@@ -99,7 +102,7 @@ function refactorUpdateSummaryFromSnapshots() {
     latestDate: latest[0],
     totalAssets: latest[1] || 0,
     netAssets: '',
-    dailyReturn: latest[5] || 0,
+    dailyReturn: latest[3] || 0,
     xirr: xirr,
     maxDrawdown: drawdownMeta.maxDrawdown,
     drawdownFrom: drawdownMeta.fromDate,

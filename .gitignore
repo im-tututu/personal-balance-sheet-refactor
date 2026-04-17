@@ -1,5 +1,4 @@
-cat > .gitignore <<'EOF'
 .clasprc.json
 node_modules/
 .DS_Store
-EOF
+refactor.test.js

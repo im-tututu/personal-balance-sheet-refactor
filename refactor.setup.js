@@ -90,8 +90,6 @@ function refactorInitSnapshots() {
       '',
       '',
       '',
-      '',
-      '',
       cumulativeNetFlow,
       ''
     ]);

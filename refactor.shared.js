@@ -24,14 +24,12 @@ var REFACTOR_COLUMNS = {
   snapshots: {
     date: 1,
     totalAssets: 2,
-    totalLiabilities: 3,
-    netAssets: 4,
-    netFlow: 5,
-    dailyReturn: 6,
-    nav: 7,
-    drawdown: 8,
-    cumulativeNetFlow: 9,
-    shares: 10
+    netFlow: 3,
+    dailyReturn: 4,
+    nav: 5,
+    drawdown: 6,
+    cumulativeNetFlow: 7,
+    shares: 8
   }
 };
 var REFACTOR_PRICE_SOURCES = ['sh', 'sz', 'bj', 'hk', 'of'];
@@ -77,8 +75,6 @@ function ensureSnapshotSheetLayout_(sheet) {
   var headers = [[
     '日期',
     '总资产',
-    '',
-    '',
     '当日净现金流',
     '日收益',
     '净值',
@@ -86,6 +82,8 @@ function ensureSnapshotSheetLayout_(sheet) {
     '净现金流合计',
     '份额'
   ]];
+  ensureSheetColumnCount_(sheet, headers[0].length);
+  sheet.getRange(1, 1, 1, sheet.getMaxColumns()).clearContent();
   sheet.getRange(1, 1, 1, headers[0].length).setValues(headers);
 }
 
@@ -93,6 +91,15 @@ function ensureAssetSnapshotSheetLayout_(sheet, assetHeaders) {
   var headers = [[REFACTOR_ASSET_SNAPSHOT_DATE_HEADER].concat(assetHeaders)];
   sheet.clearContents();
   sheet.getRange(1, 1, 1, headers[0].length).setValues(headers);
+}
+
+function ensureSheetColumnCount_(sheet, expectedColumns) {
+  var currentColumns = sheet.getMaxColumns();
+  if (currentColumns < expectedColumns) {
+    sheet.insertColumnsAfter(currentColumns, expectedColumns - currentColumns);
+  } else if (currentColumns > expectedColumns) {
+    sheet.deleteColumns(expectedColumns + 1, currentColumns - expectedColumns);
+  }
 }
 
 function sumAmounts_(ss, predicate) {
@@ -346,11 +353,11 @@ function finalizeSnapshotRows_(rows, openingCumulativeNetFlow) {
   for (var i = 0; i < rows.length; i++) {
     var currentTotalAssets = toNumber_(rows[i][1]) || 0;
 
-    var cumulativeNetFlow = toNumber_(rows[i][8]);
+    var cumulativeNetFlow = toNumber_(rows[i][6]);
     if (!isFinite(cumulativeNetFlow)) cumulativeNetFlow = 0;
 
     var previousCumulativeNetFlow = i > 0
-      ? (toNumber_(rows[i - 1][8]) || 0)
+      ? (toNumber_(rows[i - 1][6]) || 0)
       : openingFlow;
 
     var dayFlow = cumulativeNetFlow - previousCumulativeNetFlow;
@@ -358,10 +365,10 @@ function finalizeSnapshotRows_(rows, openingCumulativeNetFlow) {
     var previousTotalAssets = i > 0 ? (toNumber_(rows[i - 1][1]) || 0) : currentTotalAssets;
     var dailyReturn = i === 0 ? 0 : (currentTotalAssets - previousTotalAssets - dayFlow);
 
-    var prevNav = i > 0 ? (toNumber_(rows[i - 1][6]) || 1) : 1;
+    var prevNav = i > 0 ? (toNumber_(rows[i - 1][4]) || 1) : 1;
     if (!isFinite(prevNav) || prevNav <= 0) prevNav = 1;
 
-    var prevShares = i > 0 ? (toNumber_(rows[i - 1][9]) || 0) : 0;
+    var prevShares = i > 0 ? (toNumber_(rows[i - 1][7]) || 0) : 0;
 
     var shares;
     var nav;
@@ -377,14 +384,12 @@ function finalizeSnapshotRows_(rows, openingCumulativeNetFlow) {
     runningPeak = Math.max(runningPeak, nav || 0);
     var drawdown = runningPeak ? (nav / runningPeak) - 1 : 0;
 
-    rows[i][2] = '';
-    rows[i][3] = '';
-    rows[i][4] = dayFlow;
-    rows[i][5] = dailyReturn;
-    rows[i][6] = nav;
-    rows[i][7] = drawdown;
-    rows[i][8] = cumulativeNetFlow;
-    rows[i][9] = shares;
+    rows[i][2] = dayFlow;
+    rows[i][3] = dailyReturn;
+    rows[i][4] = nav;
+    rows[i][5] = drawdown;
+    rows[i][6] = cumulativeNetFlow;
+    rows[i][7] = shares;
   }
 }
 
@@ -420,7 +425,7 @@ function getMaxDrawdownMeta_(rows) {
 
   rows.forEach(function(row) {
     var date = normalizeDate_(row[0]);
-    var nav = toNumber_(row[6]) || 0;
+    var nav = toNumber_(row[4]) || 0;
     if (nav > runningPeakNav) {
       runningPeakNav = nav;
       runningPeakDate = date;
@@ -474,7 +479,7 @@ function refactorRefreshValidationSheet() {
   if (!snapshotSheet || snapshotSheet.getLastRow() <= 1) return;
 
   var newRows = snapshotSheet
-    .getRange(2, 1, snapshotSheet.getLastRow() - 1, REFACTOR_COLUMNS.snapshots.cumulativeNetFlow)
+    .getRange(2, 1, snapshotSheet.getLastRow() - 1, REFACTOR_COLUMNS.snapshots.shares)
     .getValues()
     .filter(function(row) { return row[0]; });
 
@@ -506,12 +511,12 @@ function refactorRefreshValidationSheet() {
       oldTotalAssets,
       newTotalAssets,
       isFinite(oldTotalAssets) && isFinite(newTotalAssets) ? newTotalAssets - oldTotalAssets : '',
-      row[8],
+      row[6],
+      row[2],
+      row[3],
       row[4],
       row[5],
-      row[6],
-      row[7],
-      row[9]
+      row[7]
     ]);
   });
 
@@ -660,8 +665,15 @@ function refactorUpsertCurrentAssetSnapshot_() {
   var assetSheet = ss.getSheetByName(REFACTOR_SHEET_NAMES.assets);
   if (!assetSheet || assetSheet.getLastRow() <= 1) return;
 
-  var assetHeaders = getNormalizedHeaderValues_(assetSheet);
-  var assetData = assetSheet.getRange(2, 1, assetSheet.getLastRow() - 1, assetSheet.getLastColumn()).getValues();
+  var sourceHeaders = getNormalizedHeaderValues_(assetSheet);
+  var keptColumnIndexes = sourceHeaders.reduce(function(indexes, header, index) {
+    if (header) indexes.push(index);
+    return indexes;
+  }, []);
+  var assetHeaders = keptColumnIndexes.map(function(index) {
+    return sourceHeaders[index];
+  });
+  var sourceData = assetSheet.getRange(2, 1, assetSheet.getLastRow() - 1, assetSheet.getLastColumn()).getValues();
   var snapshotSheet = getOrCreateSheet_(ss, REFACTOR_SHEET_NAMES.assetSnapshots);
   var snapshotHeaders = getNormalizedHeaderValues_(snapshotSheet);
   var expectedHeaders = [REFACTOR_ASSET_SNAPSHOT_DATE_HEADER].concat(assetHeaders);
@@ -682,14 +694,16 @@ function refactorUpsertCurrentAssetSnapshot_() {
     });
   }
 
-  var todayRows = assetData
+  var todayRows = sourceData
     .filter(function(row) {
       var name = row[REFACTOR_COLUMNS.assets.name - 1];
       var amount = toNumber_(row[REFACTOR_COLUMNS.assets.amount - 1]);
       return isRealAssetRow_(name, amount) && amount !== 0;
     })
     .map(function(row) {
-      return [today].concat(row);
+      return [today].concat(keptColumnIndexes.map(function(index) {
+        return row[index];
+      }));
     });
 
   var output = [expectedHeaders].concat(keptRows, todayRows);
