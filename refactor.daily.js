@@ -4,10 +4,23 @@
 // 适合绑定时间触发器，每天跑一次。
 
 function refactorDailyRun() {
+  var todayKey = formatDateKey_(normalizeDate_(new Date()));
+  logRefactor_('开始执行每日任务', { date: todayKey });
+
   refactorUpdateAssetPrices();
+  var assetSnapshotResult = refactorUpsertCurrentAssetSnapshot_();
+  var marketHistoryResult = refactorUpdateMarketValueHistoryFromAssetSnapshots_([todayKey]);
   refactorDailyUpdate();
   refactorUpdateSummaryFromSnapshots();
   refactorRefreshValidationSheet();
+
+  var result = {
+    date: todayKey,
+    assetSnapshotRows: assetSnapshotResult ? assetSnapshotResult.snapshotRows : 0,
+    marketHistoryDates: marketHistoryResult ? marketHistoryResult.upsertedDates : 0
+  };
+  logRefactor_('每日任务执行完成', result);
+  return result;
 }
 
 // 每日只维护当天那一行快照；如果当天已经存在，则覆盖更新。

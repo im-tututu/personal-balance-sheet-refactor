@@ -4,11 +4,26 @@
 // 只在新表刚建好、需要导入旧数据时运行。
 
 function refactorSetupOnce() {
+  var todayKey = formatDateKey_(normalizeDate_(new Date()));
+  logRefactor_('开始执行初始化任务', { date: todayKey });
+
   refactorMigrateSourceData();
+  var archiveResult = refactorArchiveHistoricalMarketValue_();
   refactorUpdateAssetPrices();
+  var assetSnapshotResult = refactorUpsertCurrentAssetSnapshot_();
+  var marketHistoryResult = refactorUpdateMarketValueHistoryFromAssetSnapshots_([todayKey]);
   refactorInitSnapshots();
   refactorUpdateSummaryFromSnapshots();
   refactorRefreshValidationSheet();
+
+  var result = {
+    date: todayKey,
+    insertedHistoricalDates: archiveResult ? archiveResult.insertedDates : 0,
+    assetSnapshotRows: assetSnapshotResult ? assetSnapshotResult.snapshotRows : 0,
+    marketHistoryDates: marketHistoryResult ? marketHistoryResult.upsertedDates : 0
+  };
+  logRefactor_('初始化任务执行完成', result);
+  return result;
 }
 
 // 从旧表复制静态数据到新表，之后新表就不再依赖旧表。
