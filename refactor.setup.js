@@ -60,10 +60,10 @@ function refactorInitSnapshots() {
     snapshotSheet.getRange(2, 1, existingLastRow - 1, snapshotSheet.getMaxColumns()).clearContent();
   }
 
-  var dailyFlowMap = buildDailyInvestmentFlowMap_(ss);
+  var flowTimeline = buildInvestmentFlowTimeline_(ss);
   var openingCumulativeNetFlow = getSnapshotOpeningCumulativeFlow_(ss);
   var marketRows = getHistoricalMarketValueRows_();
-  var rows = buildSnapshotSeedRows_(marketRows, dailyFlowMap);
+  var rows = buildSnapshotSeedRows_(marketRows, flowTimeline);
 
   if (!rows.length) {
     refactorUpdateSummary_({

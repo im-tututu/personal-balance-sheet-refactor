@@ -19,7 +19,7 @@ function getRefactorFormatConfigs_() {
       amountColumns: [REFACTOR_COLUMNS.flows.cashflow]
     },
     snapshots: {
-      fixedColumnCount: 7,
+      fixedColumnCount: 11,
       dateColumn: REFACTOR_COLUMNS.snapshots.date,
       amountColumns: [
         REFACTOR_COLUMNS.snapshots.totalAssets,
@@ -28,7 +28,17 @@ function getRefactorFormatConfigs_() {
         REFACTOR_COLUMNS.snapshots.cumulativeNetFlow
       ],
       integerColumns: [REFACTOR_COLUMNS.snapshots.shares],
-      rateColumns: [REFACTOR_COLUMNS.snapshots.nav],
+      rateColumns: [
+        REFACTOR_COLUMNS.snapshots.nav,
+        REFACTOR_COLUMNS.snapshots.recalculatedNav,
+        REFACTOR_COLUMNS.snapshots.navDiff,
+        REFACTOR_COLUMNS.snapshots.sourceNav,
+        REFACTOR_COLUMNS.snapshots.sourceNavDiff
+      ],
+      colorRateColumns: [
+        REFACTOR_COLUMNS.snapshots.navDiff,
+        REFACTOR_COLUMNS.snapshots.sourceNavDiff
+      ],
       signedBackgroundAmountColumns: [
         REFACTOR_COLUMNS.snapshots.netFlow,
         REFACTOR_COLUMNS.snapshots.dailyReturn
@@ -40,7 +50,11 @@ function getRefactorFormatConfigs_() {
         4: 88,
         5: 72,
         6: 98,
-        7: 86
+        7: 86,
+        8: 78,
+        9: 78,
+        10: 78,
+        11: 88
       }
     },
     marketValueHistory: {
@@ -166,7 +180,10 @@ function applyDateSortingAndFormatting_(sheet, dateColumn, lastRow, lastColumn) 
     column: dateColumn,
     ascending: false
   });
-  sheet.getRange(2, dateColumn, lastRow - 1, 1).setNumberFormat('yyyy-mm-dd');
+  var dateFormat = sheet.getName() === REFACTOR_SHEET_NAMES.snapshots
+    ? 'yyyy-mm-dd hh:mm:ss'
+    : 'yyyy-mm-dd';
+  sheet.getRange(2, dateColumn, lastRow - 1, 1).setNumberFormat(dateFormat);
 }
 
 function applyColumnFormats_(sheet, options) {

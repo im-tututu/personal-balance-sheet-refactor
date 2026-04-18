@@ -36,14 +36,14 @@ function refactorDailyUpdate() {
         2,
         1,
         snapshotSheet.getLastRow() - 1,
-        REFACTOR_COLUMNS.snapshots.shares
+        getSnapshotColumnCount_()
       ).getValues()
     : [];
 
-  var dailyFlowMap = buildDailyInvestmentFlowMap_(ss);
+  var flowTimeline = buildInvestmentFlowTimeline_(ss);
   var openingCumulativeNetFlow = getSnapshotOpeningCumulativeFlow_(ss);
   var totalAssets = getCurrentTotalAssets_(ss);
-  var todayCumulativeNetFlow = getCumulativeInvestmentFlowAsOf_(dailyFlowMap, today);
+  var todayCumulativeNetFlow = getCumulativeInvestmentFlowAsOfTimeline_(flowTimeline, today);
   var todayKey = formatDateKey_(today);
   var existingTodayIndex = -1;
 
@@ -59,7 +59,7 @@ function refactorDailyUpdate() {
     data[existingTodayIndex][1] = totalAssets;
     data[existingTodayIndex][5] = todayCumulativeNetFlow;
     finalizeSnapshotRows_(data, openingCumulativeNetFlow);
-    snapshotSheet.getRange(2, 1, data.length, REFACTOR_COLUMNS.snapshots.shares).setValues(data);
+    snapshotSheet.getRange(2, 1, data.length, getSnapshotColumnCount_()).setValues(data);
     refactorUpdateSummaryFromSnapshots();
     return;
   }
@@ -71,11 +71,15 @@ function refactorDailyUpdate() {
     '',
     '',
     todayCumulativeNetFlow,
+    '',
+    '',
+    '',
+    '',
     ''
   ]);
 
   finalizeSnapshotRows_(data, openingCumulativeNetFlow);
-  snapshotSheet.getRange(2, 1, data.length, REFACTOR_COLUMNS.snapshots.shares).setValues(data);
+  snapshotSheet.getRange(2, 1, data.length, getSnapshotColumnCount_()).setValues(data);
   refactorUpdateSummaryFromSnapshots();
 }
 
