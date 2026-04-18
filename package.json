@@ -1,0 +1,17 @@
+{
+  "name": "personal-balance-sheet-refactor",
+  "private": true,
+  "scripts": {
+    "gas:check": "node scripts/ensure-clasp-config.js",
+    "gas:push": "npm run gas:check && clasp push",
+    "gas:watch": "npm run gas:check && clasp push --watch",
+    "gas:logs": "npm run gas:check && clasp logs --watch --simplified",
+    "gas:open": "npm run gas:check && clasp open-script",
+    "gas:status": "npm run gas:check && clasp status",
+    "gas:env:prod": "node scripts/use-clasp-config.js .clasp.prod.json",
+    "gas:env:dev": "node scripts/use-clasp-config.js .clasp.dev.json",
+    "test:syntax": "node scripts/check-syntax.js",
+    "test:calc": "node scripts/test-calc.js",
+    "test": "npm run test:syntax && npm run test:calc"
+  }
+}

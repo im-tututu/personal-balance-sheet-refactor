@@ -1,0 +1,12 @@
+**/**
+!appsscript.json
+!**/*.js
+!**/*.gs
+!**/*.html
+
+.git/**
+node_modules/**
+scripts/**
+README.md
+package.json
+.clasp*.json
