@@ -1,104 +1,59 @@
 var REFACTOR_FORMAT_SHEET_KEYS = [
-  'assets',
-  'flows',
-  'snapshots',
-  'marketValueHistory',
-  'validation',
-  'assetSnapshots'
+  'snapshots'
 ];
 
 function getRefactorFormatConfigs_() {
   return {
-    assets: {
-      dateColumn: 5,
-      amountColumns: [8, 10],
-      percentColumns: [11]
-    },
-    flows: {
-      dateColumn: REFACTOR_COLUMNS.flows.date,
-      amountColumns: [REFACTOR_COLUMNS.flows.cashflow]
-    },
     snapshots: {
-      fixedColumnCount: 11,
+      fixedColumnCount: 19,
       dateColumn: REFACTOR_COLUMNS.snapshots.date,
       amountColumns: [
         REFACTOR_COLUMNS.snapshots.totalAssets,
         REFACTOR_COLUMNS.snapshots.netFlow,
         REFACTOR_COLUMNS.snapshots.dailyReturn,
-        REFACTOR_COLUMNS.snapshots.cumulativeNetFlow
+        REFACTOR_COLUMNS.snapshots.cumulativeNetFlow,
+        REFACTOR_COLUMNS.snapshots.broker,
+        REFACTOR_COLUMNS.snapshots.alipay,
+        REFACTOR_COLUMNS.snapshots.mybank,
+        REFACTOR_COLUMNS.snapshots.equity,
+        REFACTOR_COLUMNS.snapshots.debt,
+        REFACTOR_COLUMNS.snapshots.commodity,
+        REFACTOR_COLUMNS.snapshots.cash,
+        REFACTOR_COLUMNS.snapshots.dailyFee,
+        REFACTOR_COLUMNS.snapshots.totalProfit,
+        REFACTOR_COLUMNS.snapshots.brokerProfit,
+        REFACTOR_COLUMNS.snapshots.alipayFundProfit
       ],
       integerColumns: [REFACTOR_COLUMNS.snapshots.shares],
-      rateColumns: [
-        REFACTOR_COLUMNS.snapshots.nav,
-        REFACTOR_COLUMNS.snapshots.recalculatedNav,
-        REFACTOR_COLUMNS.snapshots.navDiff,
-        REFACTOR_COLUMNS.snapshots.sourceNav,
-        REFACTOR_COLUMNS.snapshots.sourceNavDiff
-      ],
-      colorRateColumns: [
-        REFACTOR_COLUMNS.snapshots.navDiff,
-        REFACTOR_COLUMNS.snapshots.sourceNavDiff
-      ],
+      rateColumns: [REFACTOR_COLUMNS.snapshots.recalculatedNav],
+      percentColumns: [REFACTOR_COLUMNS.snapshots.feeRate],
       signedBackgroundAmountColumns: [
         REFACTOR_COLUMNS.snapshots.netFlow,
-        REFACTOR_COLUMNS.snapshots.dailyReturn
+        REFACTOR_COLUMNS.snapshots.dailyReturn,
+        REFACTOR_COLUMNS.snapshots.totalProfit,
+        REFACTOR_COLUMNS.snapshots.brokerProfit,
+        REFACTOR_COLUMNS.snapshots.alipayFundProfit
       ],
       compactColumns: {
         1: 88,
         2: 98,
         3: 98,
         4: 88,
-        5: 72,
-        6: 98,
-        7: 86,
-        8: 78,
-        9: 78,
-        10: 78,
-        11: 88
-      }
-    },
-    marketValueHistory: {
-      dateColumn: 1,
-      amountColumns: [2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14],
-      percentColumns: [10],
-      compactColumns: {
-        1: 88,
-        2: 96,
-        3: 84,
-        4: 84,
-        5: 92,
-        6: 84,
-        7: 84,
-        8: 72,
-        9: 72,
-        10: 72,
-        11: 84,
-        12: 92,
-        13: 92,
-        14: 112
-      }
-    },
-    validation: {
-      dateColumn: 1,
-      amountColumns: [2, 3, 4, 5, 6, 7, 9],
-      rateColumns: [8],
-      colorAmountColumns: [4, 6, 7],
-      compactColumns: {
-        1: 88,
-        2: 98,
-        3: 98,
-        4: 98,
         5: 98,
-        6: 88,
-        7: 88,
-        8: 72,
-        9: 88
-      }
-    },
-    assetSnapshots: {
-      dateColumn: 1,
-      compactColumns: {
-        1: 88
+        6: 86,
+        7: 78,
+        8: 84,
+        9: 84,
+        10: 92,
+        11: 84,
+        12: 84,
+        13: 72,
+        14: 72,
+        15: 72,
+        16: 84,
+        17: 92,
+        18: 92,
+        19: 112
       }
     }
   };
@@ -121,7 +76,7 @@ function refactorFormatSheetByKey_(sheetKey) {
     return { sheetKey: sheetKey, updated: false };
   }
 
-  var options = cloneFormatOptions_(formatConfigs[sheetKey] || {});
+  var options = formatConfigs[sheetKey] || {};
   applyTableFormatting_(sheet, options);
   var result = {
     sheetKey: sheetKey,
@@ -132,10 +87,6 @@ function refactorFormatSheetByKey_(sheetKey) {
   };
   logRefactor_('单表格式整理完成', result);
   return result;
-}
-
-function cloneFormatOptions_(options) {
-  return JSON.parse(JSON.stringify(options || {}));
 }
 
 function applyTableFormatting_(sheet, options) {
@@ -150,13 +101,9 @@ function applyTableFormatting_(sheet, options) {
   var range = sheet.getRange(1, 1, lastRow, lastColumn);
 
   applyBaseSheetFormatting_(sheet, range, lastRow, lastColumn);
-  resetNumberFormats_(sheet);
-  applyDateSortingAndFormatting_(sheet, options.dateColumn, lastRow, lastColumn);
-  applyColumnFormats_(sheet, options);
-  resetFilter_(sheet, lastRow, lastColumn);
-  resetConditionalStyles_(sheet, options);
-  resetBanding_(sheet, lastRow, lastColumn);
-  autoResizeReasonableColumns_(sheet, lastColumn, options.compactColumns);
+  applyNumberFormats_(sheet, options, lastRow, lastColumn);
+  applyConditionalStyles_(sheet, options, lastRow);
+  applyConfiguredColumnWidths_(sheet, lastColumn, options.compactColumns);
 }
 
 function applyBaseSheetFormatting_(sheet, range, lastRow, lastColumn) {
@@ -174,92 +121,65 @@ function applyBaseSheetFormatting_(sheet, range, lastRow, lastColumn) {
     .setHorizontalAlignment('center');
 }
 
-function applyDateSortingAndFormatting_(sheet, dateColumn, lastRow, lastColumn) {
-  if (!(lastRow > 1 && dateColumn)) return;
-  sheet.getRange(2, 1, lastRow - 1, lastColumn).sort({
-    column: dateColumn,
-    ascending: false
+function applyNumberFormats_(sheet, options, lastRow, lastColumn) {
+  if (lastRow <= 1) return;
+  var columnFormats = {};
+  setColumnFormats_(columnFormats, options.amountColumns, '#,##0.0', lastColumn);
+  setColumnFormats_(columnFormats, options.integerColumns, '#,##0', lastColumn);
+  setColumnFormats_(columnFormats, options.rateColumns, '0.0000', lastColumn);
+  setColumnFormats_(columnFormats, options.percentColumns, '0.00%', lastColumn);
+  setColumnFormats_(columnFormats, options.colorAmountColumns, '[Red]#,##0.0;[Color10]-#,##0.0;#,##0.0', lastColumn);
+  setColumnFormats_(columnFormats, options.colorRateColumns, '[Red]0.0000;[Color10]-0.0000;0.0000', lastColumn);
+  setColumnFormats_(columnFormats, options.colorPercentColumns, '[Red]0.00%;[Color10]-0.00%;0.00%', lastColumn);
+
+  if (options.dateColumn && options.dateColumn <= lastColumn) {
+    columnFormats[options.dateColumn] = 'yyyy-mm-dd hh:mm:ss';
+  }
+
+  var formats = [];
+  for (var r = 1; r < lastRow; r++) {
+    var rowFormats = [];
+    for (var c = 1; c <= lastColumn; c++) {
+      rowFormats.push(columnFormats[c] || 'General');
+    }
+    formats.push(rowFormats);
+  }
+  sheet.getRange(2, 1, lastRow - 1, lastColumn).setNumberFormats(formats);
+}
+
+function setColumnFormats_(columnFormats, columns, format, lastColumn) {
+  if (!columns || !columns.length) return;
+  columns.forEach(function(column) {
+    if (column <= lastColumn) columnFormats[column] = format;
   });
-  var dateFormat = sheet.getName() === REFACTOR_SHEET_NAMES.snapshots
-    ? 'yyyy-mm-dd hh:mm:ss'
-    : 'yyyy-mm-dd';
-  sheet.getRange(2, dateColumn, lastRow - 1, 1).setNumberFormat(dateFormat);
 }
 
-function applyColumnFormats_(sheet, options) {
-  applyNumberFormatToColumns_(sheet, options.amountColumns, '#,##0.0');
-  applyNumberFormatToColumns_(sheet, options.integerColumns, '#,##0');
-  applyNumberFormatToColumns_(sheet, options.rateColumns, '0.0000');
-  applyNumberFormatToColumns_(sheet, options.percentColumns, '0.00%');
-  applyNumberFormatToColumns_(sheet, options.colorAmountColumns, '[Red]#,##0.0;[Color10]-#,##0.0;#,##0.0');
-  applyNumberFormatToColumns_(sheet, options.colorRateColumns, '[Red]0.0000;[Color10]-0.0000;0.0000');
-  applyNumberFormatToColumns_(sheet, options.colorPercentColumns, '[Red]0.00%;[Color10]-0.00%;0.00%');
-}
+function applyConditionalStyles_(sheet, options, lastRow) {
+  if (lastRow <= 1) return;
+  var columns = []
+    .concat(options.signedBackgroundAmountColumns || [])
+    .concat(options.signedBackgroundPercentColumns || []);
 
-function resetFilter_(sheet, lastRow, lastColumn) {
-  if (sheet.getFilter()) {
-    sheet.getFilter().remove();
+  if (!columns.length) {
+    sheet.setConditionalFormatRules([]);
+    return;
   }
-  if (lastRow >= 1 && lastColumn >= 1) {
-    sheet.getRange(1, 1, lastRow, lastColumn).createFilter();
-  }
-}
 
-function resetConditionalStyles_(sheet, options) {
-  clearConditionalFormatRules_(sheet);
-  applySignedBackgroundRules_(sheet, options.signedBackgroundAmountColumns, '#f4c7c3', '#b6d7a8');
-  applySignedBackgroundRules_(sheet, options.signedBackgroundPercentColumns, '#f4c7c3', '#b6d7a8');
-}
-
-function resetBanding_(sheet, lastRow, lastColumn) {
-  clearBandings_(sheet);
-  if (lastRow > 1) {
-    sheet.getRange(1, 1, lastRow, lastColumn).applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY);
-  }
-}
-
-function applyNumberFormatToColumns_(sheet, columns, format) {
-  if (!columns || !columns.length || sheet.getLastRow() <= 1) return;
+  var rules = [];
   columns.forEach(function(column) {
     if (column > sheet.getLastColumn()) return;
-    sheet.getRange(2, column, sheet.getLastRow() - 1, 1).setNumberFormat(format);
-  });
-}
-
-function resetNumberFormats_(sheet) {
-  if (sheet.getLastRow() <= 1 || sheet.getLastColumn() <= 0) return;
-  sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).setNumberFormat('General');
-}
-
-function clearBandings_(sheet) {
-  var bandings = sheet.getBandings();
-  bandings.forEach(function(banding) {
-    banding.remove();
-  });
-}
-
-function clearConditionalFormatRules_(sheet) {
-  sheet.setConditionalFormatRules([]);
-}
-
-function applySignedBackgroundRules_(sheet, columns, positiveColor, negativeColor) {
-  if (!columns || !columns.length || sheet.getLastRow() <= 1) return;
-
-  var rules = sheet.getConditionalFormatRules();
-  columns.forEach(function(column) {
-    if (column > sheet.getLastColumn()) return;
-    var range = sheet.getRange(2, column, sheet.getLastRow() - 1, 1);
+    var range = sheet.getRange(2, column, lastRow - 1, 1);
     rules.push(
       SpreadsheetApp.newConditionalFormatRule()
         .whenNumberGreaterThan(0)
-        .setBackground(positiveColor)
+        .setBackground('#f4c7c3')
         .setRanges([range])
         .build()
     );
     rules.push(
       SpreadsheetApp.newConditionalFormatRule()
         .whenNumberLessThan(0)
-        .setBackground(negativeColor)
+        .setBackground('#b6d7a8')
         .setRanges([range])
         .build()
     );
@@ -267,19 +187,11 @@ function applySignedBackgroundRules_(sheet, columns, positiveColor, negativeColo
   sheet.setConditionalFormatRules(rules);
 }
 
-function autoResizeReasonableColumns_(sheet, lastColumn, compactColumns) {
-  if (lastColumn <= 0) return;
-  sheet.autoResizeColumns(1, lastColumn);
+function applyConfiguredColumnWidths_(sheet, lastColumn, compactColumns) {
+  if (lastColumn <= 0 || !compactColumns) return;
   for (var column = 1; column <= lastColumn; column++) {
-    if (compactColumns && compactColumns[column]) {
+    if (compactColumns[column]) {
       sheet.setColumnWidth(column, compactColumns[column]);
-      continue;
-    }
-    var width = sheet.getColumnWidth(column);
-    if (width > 160) {
-      sheet.setColumnWidth(column, 160);
-    } else if (width < 60) {
-      sheet.setColumnWidth(column, 60);
     }
   }
 }
